@@ -15,6 +15,104 @@ import (
 	"github.com/joho/godotenv"
 )
 
+// Обработчик обновлений
+type updateHandler struct {
+	client        *telegram.Client
+	channels      map[int64]*tg.InputPeerChannel
+	inputPeerUser tg.InputPeerClass
+}
+
+func (h *updateHandler) Handle(ctx context.Context, u tg.UpdatesClass) error {
+	switch updates := u.(type) {
+	case *tg.Updates:
+		for _, update := range updates.Updates {
+			h.processUpdate(ctx, update)
+		}
+	case *tg.UpdatesCombined:
+		for _, update := range updates.Updates {
+			h.processUpdate(ctx, update)
+		}
+	case *tg.UpdateShort:
+		h.processUpdate(ctx, updates.Update)
+	default:
+		log.Printf("Необработанный тип обновления: %T", updates)
+	}
+	return nil
+}
+
+func (h *updateHandler) processUpdate(ctx context.Context, update tg.UpdateClass) {
+	switch u := update.(type) {
+	case *tg.UpdateNewChannelMessage:
+		if err := h.handleUpdate(ctx, u); err != nil {
+			log.Printf("Ошибка при обработке обновления: %v", err)
+		}
+	default:
+		// Игнорируем другие типы обновлений
+	}
+}
+
+func (h *updateHandler) handleUpdate(ctx context.Context, update *tg.UpdateNewChannelMessage) error {
+	message, ok := update.Message.(*tg.Message)
+	if !ok {
+		return nil
+	}
+
+	peerChannel, ok := message.PeerID.(*tg.PeerChannel)
+	if !ok {
+		return nil
+	}
+
+	// Проверяем, является ли канал тем, который мы отслеживаем
+	channel, exists := h.channels[peerChannel.ChannelID]
+	if !exists {
+		return nil
+	}
+
+	// Игнорируем комментарии к постам
+	if message.ReplyTo != nil && message.Post {
+		log.Println("Комментарий к посту не будет переслан")
+		return nil
+	}
+
+	// Пересылаем сообщение
+	rand.Seed(time.Now().UnixNano())
+	randomID := rand.Int63()
+	_, err := h.client.API().MessagesForwardMessages(ctx, &tg.MessagesForwardMessagesRequest{
+		FromPeer: &tg.InputPeerChannel{
+			ChannelID:  peerChannel.ChannelID,
+			AccessHash: channel.AccessHash,
+		},
+		ID:                []int{message.ID},
+		RandomID:          []int64{randomID},
+		ToPeer:            h.inputPeerUser,
+		Silent:            true,
+		Background:        false,
+		WithMyScore:       false,
+		DropAuthor:        false,
+		DropMediaCaptions: false,
+	})
+	if err != nil {
+		log.Printf("Ошибка при пересылке сообщения из канала %d: %v", peerChannel.ChannelID, err)
+		return err
+	}
+
+	// Помечаем сообщение как прочитанное
+	_, err = h.client.API().ChannelsReadHistory(ctx, &tg.ChannelsReadHistoryRequest{
+		Channel: &tg.InputChannel{
+			ChannelID:  peerChannel.ChannelID,
+			AccessHash: channel.AccessHash,
+		},
+		MaxID: message.ID,
+	})
+	if err != nil {
+		log.Printf("Ошибка при отметке сообщения как прочитанного для канала %d: %v", peerChannel.ChannelID, err)
+		return err
+	}
+
+	log.Printf("Сообщение из канала %d успешно переслано и помечено как прочитанное", peerChannel.ChannelID)
+	return nil
+}
+
 func main() {
 	// Загрузка переменных окружения из .env файла
 	if err := godotenv.Load(); err != nil {
@@ -24,139 +122,111 @@ func main() {
 	// Получение значений из .env файла
 	apiID, err := strconv.Atoi(os.Getenv("API_ID"))
 	if err != nil {
-		log.Fatal("Неверный apiID")
+		log.Fatal(err)
 	}
 	apiHash := os.Getenv("API_HASH")
 	phone := os.Getenv("PHONE")
-	channelUsername := os.Getenv("CHANNEL_USERNAME")
-	userUsername := os.Getenv("USER_USERNAME")
-
-	client := telegram.NewClient(apiID, apiHash, telegram.Options{})
+	recipientUsername := os.Getenv("RECIPIENT_USERNAME")
 
 	ctx := context.Background()
+
+	// Создаем клиент и передаем обработчик обновлений через опции
+	handler := &updateHandler{}
+
+	client := telegram.NewClient(apiID, apiHash, telegram.Options{
+		UpdateHandler:  handler,
+		SessionStorage: &telegram.FileSessionStorage{Path: "session.json"},
+	})
 
 	// Запуск клиента
 	if err := client.Run(ctx, func(ctx context.Context) error {
 		// Функция для ввода кода аутентификации
 		codePrompt := func(ctx context.Context, sentCode *tg.AuthSentCode) (string, error) {
-			// Введите код
 			var code string
 			fmt.Print("Введите код: ")
 			_, err := fmt.Scanln(&code)
-			if err != nil {
-				return "", err
-			}
-			return code, nil
+			return code, err
 		}
 
 		// Процесс аутентификации
-		if err := auth.NewFlow(
+		flow := auth.NewFlow(
 			auth.CodeOnly(phone, auth.CodeAuthenticatorFunc(codePrompt)),
 			auth.SendCodeOptions{},
-		).Run(ctx, client.Auth()); err != nil {
-			return err
+		)
+		if err := client.Auth().IfNecessary(ctx, flow); err != nil {
+			if rpcErr, ok := err.(*telegram.Error); ok && rpcErr.Code == 420 {
+				waitTime := rpcErr.Argument
+				log.Printf("FLOOD_WAIT: необходимо подождать %d секунд перед повторной попыткой", waitTime)
+				time.Sleep(time.Duration(waitTime) * time.Second)
+				return client.Auth().IfNecessary(ctx, flow)
+			}
+			return fmt.Errorf("ошибка аутентификации: %w", err)
 		}
 
-		// Получение канала
-		res, err := client.API().ContactsResolveUsername(ctx, channelUsername)
+		// Получение списка каналов
+		dialogs, err := client.API().MessagesGetDialogs(ctx, &tg.MessagesGetDialogsRequest{
+			Limit:      100,
+			OffsetDate: 0,
+			OffsetID:   0,
+			OffsetPeer: &tg.InputPeerEmpty{},
+		})
 		if err != nil {
-			return err
+			return fmt.Errorf("ошибка при получении диалогов: %v", err)
 		}
 
-		var channel *tg.InputPeerChannel
-		for _, chat := range res.Chats {
-			if ch, ok := chat.(*tg.Channel); ok {
-				channel = &tg.InputPeerChannel{
+		var chats []tg.ChatClass
+		switch d := dialogs.(type) {
+		case *tg.MessagesDialogs:
+			chats = d.Chats
+		case *tg.MessagesDialogsSlice:
+			chats = d.Chats
+		default:
+			return fmt.Errorf("неверный тип данных для диалогов: %T", dialogs)
+		}
+
+		channels := make(map[int64]*tg.InputPeerChannel)
+		for _, chat := range chats {
+			if ch, ok := chat.(*tg.Channel); ok && !ch.Megagroup {
+				channels[ch.ID] = &tg.InputPeerChannel{
 					ChannelID:  ch.ID,
 					AccessHash: ch.AccessHash,
+				}
+			}
+		}
+
+		if len(channels) == 0 {
+			return fmt.Errorf("нет подписанных каналов")
+		}
+
+		// Получение пользователя для пересылки сообщений
+		userRes, err := client.API().ContactsResolveUsername(ctx, recipientUsername)
+		if err != nil {
+			return fmt.Errorf("ошибка при получении пользователя: %v", err)
+		}
+
+		var inputPeerUser tg.InputPeerClass
+		for _, user := range userRes.Users {
+			if usr, ok := user.(*tg.User); ok {
+				inputPeerUser = &tg.InputPeerUser{
+					UserID:     usr.ID,
+					AccessHash: usr.AccessHash,
 				}
 				break
 			}
 		}
 
-		if channel == nil {
-			return fmt.Errorf("канал не найден")
+		if inputPeerUser == nil {
+			return fmt.Errorf("пользователь не найден")
 		}
 
-		var lastMessageID int
+		// Инициализируем обработчик обновлений
+		handler.client = client
+		handler.channels = channels
+		handler.inputPeerUser = inputPeerUser
 
-		// Настройка мониторинга канала на наличие новых сообщений
-		go func() {
-			for {
-				messages, err := client.API().MessagesGetHistory(ctx, &tg.MessagesGetHistoryRequest{
-					Peer:  channel,
-					Limit: 1,
-				})
-				if err != nil {
-					log.Printf("Ошибка при получении истории сообщений: %v", err)
-					continue
-				}
+		log.Println("Бот запущен и ожидает новых сообщений...")
 
-				history, ok := messages.(*tg.MessagesChannelMessages)
-				if !ok || len(history.Messages) == 0 {
-					log.Println("Сообщения не найдены")
-					continue
-				}
-
-				message, ok := history.Messages[0].(*tg.Message)
-				if !ok {
-					log.Println("Неверный тип сообщения")
-					continue
-				}
-
-				if message.ID == lastMessageID {
-					log.Println("Новое сообщение отсутствует")
-					time.Sleep(30 * time.Second)
-					continue
-				}
-
-				lastMessageID = message.ID
-
-				// Получение пользователя для пересылки сообщения
-				userRes, err := client.API().ContactsResolveUsername(ctx, userUsername) // Замените на имя пользователя получателя
-				if err != nil {
-					log.Printf("Ошибка при получении пользователя: %v", err)
-					continue
-				}
-
-				var inputPeerUser *tg.InputPeerUser
-				for _, user := range userRes.Users {
-					if usr, ok := user.(*tg.User); ok {
-						inputPeerUser = &tg.InputPeerUser{
-							UserID:     usr.ID,
-							AccessHash: usr.AccessHash,
-						}
-						break
-					}
-				}
-
-				if inputPeerUser == nil {
-					log.Println("Пользователь не найден")
-					continue
-				}
-
-				// Подготовка данных для пересылки сообщения
-				rand.Seed(time.Now().UnixNano())
-				randomID := rand.Int63()
-
-				// Пересылка сообщения пользователю
-				_, err = client.API().MessagesForwardMessages(ctx, &tg.MessagesForwardMessagesRequest{
-					FromPeer: channel,
-					ID:       []int{message.ID},
-					RandomID: []int64{randomID},
-					ToPeer:   inputPeerUser,
-				})
-				if err != nil {
-					log.Printf("Ошибка при пересылке сообщения: %v", err)
-					continue
-				}
-
-				log.Println("Сообщение успешно переслано")
-
-				time.Sleep(30 * time.Second) // Задержка перед следующей проверкой
-			}
-		}()
-
+		// Ожидание завершения контекста
 		<-ctx.Done()
 		return nil
 	}); err != nil {
