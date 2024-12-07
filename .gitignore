@@ -1,0 +1,43 @@
+# Binary files
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+bot
+
+# Test binaries
+*.test
+
+# Coverage files
+*.out
+
+# Dependencies
+vendor/
+
+# Go workspace
+go.work
+
+# IDE files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Environment
+.env
+
+# Telegram session
+session.json
+
+# Debug
+__debug_bin
+debug.test
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log 
