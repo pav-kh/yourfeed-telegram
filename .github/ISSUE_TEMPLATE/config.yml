@@ -1,0 +1,10 @@
+```yaml
+blank_issues_enabled: false
+contact_links:
+  - name: GitHub Discussions
+    url: https://github.com/pav-kh/yourfeed-telegram/discussions
+    about: Please ask and answer questions here.
+  - name: Security Issue
+    url: https://github.com/pav-kh/yourfeed-telegram/security/policy
+    about: Please report security vulnerabilities here.
+``` 

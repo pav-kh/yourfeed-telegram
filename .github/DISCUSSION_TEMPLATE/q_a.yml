@@ -1,0 +1,25 @@
+```yaml
+title: "[Q&A] "
+labels: ["question"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for starting a discussion! Please fill out the information below.
+  
+  - type: textarea
+    id: question
+    attributes:
+      label: Question
+      description: What would you like to know about YourFeed?
+      placeholder: Ask your question here...
+    validations:
+      required: true
+  
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional Context
+      description: Add any additional context or screenshots about your question here.
+      placeholder: More details...
+``` 

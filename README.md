@@ -5,45 +5,72 @@
 ![Go Version](https://img.shields.io/badge/Go-1.22+-00ADD8?style=for-the-badge&logo=go)
 ![Telegram](https://img.shields.io/badge/Telegram-2CA5E0?style=for-the-badge&logo=telegram&logoColor=white)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg?style=for-the-badge)](LICENSE)
+![Status](https://img.shields.io/badge/status-active-success.svg?style=for-the-badge)
 
 </div>
 
 YourFeed is a Telegram user-bot that aggregates your favorite channels into one personalized news feed and sends it to your main account. It acts like an aggregator of content, just like your Instagram or Facebook feed, but for Telegram.
+
+## 📑 Table of Contents
+
+- [Features](#-features)
+- [Technologies](#️-technologies)
+- [Prerequisites](#-prerequisites)
+- [Quick Start](#-quick-start)
+- [Project Structure](#-project-structure)
+- [Configuration](#-configuration)
+- [Security](#-security)
+- [Troubleshooting](#-troubleshooting)
+- [Contributing](#-contributing)
+- [TODO](#-todo)
+- [License](#-license)
+- [Authors](#-authors)
+- [Contact](#-contact)
 
 ## ✨ Features
 
 - 🔄 **Unified Feed**: All posts from subscribed channels in one place
 - 🚀 **Instant Updates**: Receive new posts immediately after publication
 - 🎯 **Smart Filtering**: Skip comments and promotional posts
-- 📊 **Efficient Processing**: Queue-based system for reliable message delivery
-- 🛡️ **Error Protection**: Automatic retries on failures
-- 💪 **High Performance**: Asynchronous message processing
+- 📊 **Performance Metrics**: Real-time monitoring of message processing
+- 🛡️ **Error Protection**: Automatic retries and rate limiting
+- 💪 **High Performance**: Object pooling and worker-based processing
+- 🔒 **Graceful Shutdown**: Clean shutdown with proper resource cleanup
 
 ## 🛠️ Technologies
 
 - [Go](https://golang.org/) - Modern and fast programming language
 - [gotd/td](https://github.com/gotd/td) - Telegram MTProto client in Go
-- [uber-go/zap](https://github.com/uber-go/zap) - Fast, structured logger
+- [godotenv](https://github.com/joho/godotenv) - Environment variable management
 
-## 📋 Requirements
+## 📋 Prerequisites
 
-- Go 1.22 or higher
-- Telegram API credentials (API_ID and API_HASH)
-- Access to Telegram channels
-- Telegram account for user-bot
+Before you begin, ensure you have:
+
+- Go 1.22 or higher installed
+- A Telegram account
+- Telegram API credentials (API_ID and API_HASH) from https://my.telegram.org
+- Access to Telegram channels you want to aggregate
+- Git installed (for cloning the repository)
 
 ## 🚀 Quick Start
 
 1. **Clone the repository**
 
    ```bash
-   git clone https://github.com/yourusername/yourfeed.git
-   cd yourfeed
+   git clone https://github.com/pav-kh/yourfeed-telegram.git
+   cd yourfeed-telegram
    ```
 
 2. **Configure the application**
 
-   Create a `.env` file in the root directory:
+   Create a `.env` file based on `.env.example`:
+
+   ```bash
+   cp .env.example .env
+   ```
+
+   Edit `.env` with your credentials:
 
    ```env
    API_ID=your_api_id
@@ -67,37 +94,105 @@ YourFeed is a Telegram user-bot that aggregates your favorite channels into one 
 ## 📁 Project Structure
 
 ```
-.
+yourfeed-telegram/
 ├── cmd/
 │   └── bot/
 │       └── main.go           # Application entry point
 ├── internal/
-│   ├── handler/
-│   │   └── handler.go        # Telegram updates handler
-│   └── queue/
-│       └── queue.go          # Message queue
-├── .env                      # Configuration
-├── go.mod                    # Go dependencies
-└── README.md                 # Documentation
+│   ├── config/              # Configuration management
+│   │   └── config.go
+│   ├── handler/             # Telegram updates handler
+│   │   └── handler.go
+│   ├── metrics/             # Performance metrics
+│   │   └── metrics.go
+│   ├── models/              # Data models
+│   │   └── message.go
+│   ├── pool/                # Object and worker pools
+│   │   ├── object.go
+│   │   └── worker.go
+│   └── ratelimit/           # Rate limiting
+│       └── ratelimit.go
+├── pkg/
+│   └── telegram/            # Telegram client wrapper
+│       └── client.go
+├── .env.example             # Example configuration
+├── go.mod                   # Go dependencies
+└── README.md               # Documentation
 ```
 
 ## 🔧 Configuration
 
-| Variable           | Description                    |
-| ------------------ | ------------------------------ |
-| API_ID             | Telegram application ID        |
-| API_HASH           | Telegram application hash      |
-| PHONE              | Phone number for authorization |
-| RECIPIENT_USERNAME | Target username for messages   |
+| Variable           | Description                    | Example              |
+| ------------------ | ------------------------------ | -------------------- |
+| API_ID             | Telegram application ID        | 123456               |
+| API_HASH           | Telegram application hash      | abcdef1234567890     |
+| PHONE              | Phone number for authorization | +1234567890          |
+| RECIPIENT_USERNAME | Target username for messages   | username (without @) |
+
+## 🤝 Security
+
+- Never share your `.env` file or API credentials
+- Keep your session file (`session.json`) private
+- Regularly update dependencies to patch security vulnerabilities
+- The bot runs with user privileges, be cautious with channel access
+- Consider using a separate Telegram account for the bot
+- Monitor the bot's activity regularly for unusual behavior
+
+## ❗ Troubleshooting
+
+Common issues and solutions:
+
+1. **Authentication Failed**
+
+   - Verify API credentials in `.env`
+   - Check phone number format
+   - Ensure 2FA is handled correctly
+
+2. **Rate Limiting**
+
+   - The bot implements automatic rate limiting
+   - Wait for the specified time before retrying
+   - Consider reducing the number of channels
+
+3. **Message Processing Issues**
+   - Check logs for specific error messages
+   - Verify channel permissions
+   - Ensure recipient username is correct
 
 ## 🤝 Contributing
 
-We welcome contributions to the project! Here's how you can help:
+We welcome contributions! Here's how you can help:
 
-1. Fork the repository
-2. Create a branch for your changes
-3. Make changes and commit them
-4. Submit a pull request
+1. **Fork & Clone**
+
+   ```bash
+   git clone https://github.com/yourusername/yourfeed-telegram.git
+   ```
+
+2. **Create Branch**
+
+   ```bash
+   git checkout -b feature/your-feature-name
+   ```
+
+3. **Make Changes**
+
+   - Follow Go best practices
+   - Add tests for new features
+   - Update documentation
+
+4. **Commit**
+
+   ```bash
+   git commit -m "feat: add your feature description"
+   ```
+
+5. **Push & Submit PR**
+   ```bash
+   git push origin feature/your-feature-name
+   ```
+
+Please read our [Contributing Guidelines](.github/CONTRIBUTING.md) for more details.
 
 ## 📝 TODO
 
@@ -113,8 +208,17 @@ This project is licensed under the MIT License. See the [LICENSE](LICENSE) file 
 
 - [@pav-kh](https://github.com/pav-kh) - Idea and implementation
 
+## 📞 Contact
+
+- **Project Maintainer**: [@pav-kh](https://github.com/pav-kh)
+- **Issue Tracker**: [GitHub Issues](https://github.com/pav-kh/yourfeed-telegram/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/pav-kh/yourfeed-telegram/discussions)
+
 ---
 
 <div align="center">
 ⭐ Star this project if you find it useful! ⭐
+
+[Report Bug](https://github.com/pav-kh/yourfeed-telegram/issues) · [Request Feature](https://github.com/pav-kh/yourfeed-telegram/issues)
+
 </div>
