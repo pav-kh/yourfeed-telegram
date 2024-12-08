@@ -87,8 +87,8 @@ Before you begin, ensure you have:
 
 4. **Build and run**
    ```bash
-   go build -o bot ./cmd/bot
-   ./bot
+   go build -o yourfeed ./cmd/bot
+   ./yourfeed
    ```
 
 ## 📁 Project Structure
@@ -97,7 +97,7 @@ Before you begin, ensure you have:
 yourfeed-telegram/
 ├── cmd/
 │   └── bot/
-│       └── main.go           # Application entry point
+│       └── main.go          # Application entry point
 ├── internal/
 │   ├── config/              # Configuration management
 │   │   └── config.go
@@ -117,7 +117,7 @@ yourfeed-telegram/
 │       └── client.go
 ├── .env.example             # Example configuration
 ├── go.mod                   # Go dependencies
-└── README.md               # Documentation
+└── README.md                # Documentation
 ```
 
 ## 🔧 Configuration
